@@ -1,0 +1,7 @@
+## Interface: 30300
+## Title: MS Logger Raid
+## Notes: Tema RaidWarningHelper opaco, modo estricto 3.3.5a, scrollbar centrada y nombres manuales normalizados.
+## Author: Northbridge
+## Version: 3.6.11
+## SavedVariables: MSLR_Saved
+MSLoggerRaid.lua
