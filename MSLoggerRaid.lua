@@ -1,4 +1,8 @@
 -- MSLoggerRaid - 3.3.5 (WotLK 3.3.5a)
+-- v3.6.12:
+--   * Ventana de confirmacion compactada y mas proporcionada al resto de la UI.
+--   * Botones mas juntos para evitar huecos excesivos.
+--
 -- v3.6.11:
 --   * Normalizacion de nombres escritos a mano: trim, sin reino y con capitalizacion consistente.
 --   * Si el nombre coincide con alguien del roster, usa la capitalizacion real del juego.
@@ -782,49 +786,93 @@ resizeGrip:SetScript("OnMouseUp", StopResize)
 MSLR:HookScript("OnHide", StopResize)
 
 -- Confirmación propia (sin StaticPopup)
-local confirmFrame, confirmText, confirmYes, confirmNo, confirmCallback
+local confirmFrame, confirmText, confirmYes, confirmNo, confirmExtra, confirmCallback
+
+local function LayoutConfirmFrame(showExtra)
+    if not confirmFrame then return end
+
+    confirmText:ClearAllPoints()
+    confirmYes:ClearAllPoints()
+    confirmNo:ClearAllPoints()
+
+    if showExtra then
+        confirmFrame:SetSize(326, 108)
+        confirmText:SetPoint("TOP", 0, -16)
+        confirmText:SetWidth(286)
+
+        confirmYes:SetSize(90, 22)
+        confirmExtra:SetSize(90, 22)
+        confirmNo:SetSize(90, 22)
+
+        confirmYes:SetPoint("BOTTOMLEFT", confirmFrame, "BOTTOMLEFT", 16, 12)
+        confirmExtra:SetPoint("BOTTOM", confirmFrame, "BOTTOM", 0, 12)
+        confirmNo:SetPoint("BOTTOMRIGHT", confirmFrame, "BOTTOMRIGHT", -16, 12)
+        confirmExtra:Show()
+    else
+        confirmFrame:SetSize(272, 90)
+        confirmText:SetPoint("TOP", 0, -14)
+        confirmText:SetWidth(232)
+
+        confirmYes:SetSize(88, 22)
+        confirmNo:SetSize(88, 22)
+
+        confirmYes:SetPoint("BOTTOM", confirmFrame, "BOTTOM", -50, 12)
+        confirmNo:SetPoint("BOTTOM", confirmFrame, "BOTTOM", 50, 12)
+        if confirmExtra then confirmExtra:Hide() end
+    end
+end
 
 local function EnsureConfirmFrame()
     if confirmFrame then return end
     confirmFrame = CreateFrame("Frame", "MSLR_ConfirmFrame", UIParent)
-    confirmFrame:SetSize(360, 120)
     confirmFrame:SetPoint("CENTER")
     confirmFrame:SetFrameStrata("DIALOG")
     ApplyThemeBackdrop(confirmFrame, THEME_OUTER_BG, THEME_OUTER_BORDER, 16, 4)
     confirmFrame:Hide()
 
     confirmText = confirmFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    confirmText:SetPoint("TOP", 0, -20)
-    confirmText:SetWidth(320)
     confirmText:SetJustifyH("CENTER")
+    confirmText:SetJustifyV("MIDDLE")
     confirmText:SetTextColor(THEME_TEXT_GOLD[1], THEME_TEXT_GOLD[2], THEME_TEXT_GOLD[3])
 
     confirmYes = CreateFrame("Button", nil, confirmFrame, "UIPanelButtonTemplate")
-    confirmYes:SetSize(120, 24)
-    confirmYes:SetPoint("BOTTOMLEFT", confirmFrame, "BOTTOMLEFT", 30, 16)
     confirmYes:SetText(YES)
 
     confirmNo = CreateFrame("Button", nil, confirmFrame, "UIPanelButtonTemplate")
-    confirmNo:SetSize(120, 24)
-    confirmNo:SetPoint("BOTTOMRIGHT", confirmFrame, "BOTTOMRIGHT", -30, 16)
     confirmNo:SetText(NO)
+
+    confirmExtra = CreateFrame("Button", nil, confirmFrame, "UIPanelButtonTemplate")
+    confirmExtra:SetText("Borrar")
+    confirmExtra:Hide()
 
     SkinButton(confirmYes)
     SkinButton(confirmNo)
+    SkinButton(confirmExtra)
 
     confirmYes:SetScript("OnClick", function()
         confirmFrame:Hide()
         if confirmCallback then pcall(confirmCallback) end
     end)
     confirmNo:SetScript("OnClick", function() confirmFrame:Hide() end)
+    confirmExtra:SetScript("OnClick", function()
+        clearAll()
+        if MSLR.refreshList then MSLR.refreshList() end
+        confirmFrame:Hide()
+    end)
 
+    confirmFrame:SetScript("OnHide", function()
+        if confirmExtra then confirmExtra:Hide() end
+    end)
+
+    LayoutConfirmFrame(false)
     tinsert(UISpecialFrames, "MSLR_ConfirmFrame")
 end
 
-local function ShowConfirm(message, onAccept)
+local function ShowConfirm(message, onAccept, showExtra)
     EnsureConfirmFrame()
     confirmCallback = onAccept
     confirmText:SetText(message or "")
+    LayoutConfirmFrame(showExtra)
     confirmFrame:Show()
 end
 
@@ -954,23 +1002,7 @@ MSLR:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_LOGIN" then
         if not tableIsEmpty(msData) then
-            ShowConfirm("Se han encontrado registros de la sesión anterior.\n¿Quieres mantenerlos?", function() end)
-            if not confirmFrame.extra then
-                confirmFrame.extra = CreateFrame("Button", nil, confirmFrame, "UIPanelButtonTemplate")
-                confirmFrame.extra:SetSize(120, 24)
-                confirmFrame.extra:SetPoint("CENTER", confirmFrame, "CENTER", 0, -10)
-                confirmFrame.extra:SetText("Borrar")
-                confirmFrame.extra:SetScript("OnClick", function()
-                    clearAll()
-                    if MSLR.refreshList then MSLR.refreshList() end
-                    confirmFrame:Hide()
-                end)
-            else
-                confirmFrame.extra:Show()
-            end
-            confirmFrame:HookScript("OnHide", function(selfFrame)
-                if selfFrame.extra then selfFrame.extra:Hide() end
-            end)
+            ShowConfirm("Se han encontrado registros de la sesión anterior.\n¿Quieres mantenerlos?", function() end, true)
         end
         MSLR:Hide()
         isRecording = false
