@@ -1,4 +1,72 @@
 -- MSLoggerRaid - 3.3.5 (WotLK 3.3.5a)
+-- v3.6.13:
+--   * Ahora tambien registra palabras clave exactas sin prefijo "ms" para reducir fallos humanos en raid.
+--   * Alias soportados: pvp, pve, cat, rdudu, boomie, rshaman, enha, ele, ppala, rpala,
+--     hpala, fdk, bdk, udk, disco, sp, fwar, tank, dps, heal.
+--
+-- v3.6.12:
+--   * Ventana de confirmacion compactada y mas proporcionada al resto de la UI.
+--   * Botones mas juntos para evitar huecos excesivos.
+--
+-- v3.6.11:
+--   * Normalizacion de nombres escritos a mano: trim, sin reino y con capitalizacion consistente.
+--   * Si el nombre coincide con alguien del roster, usa la capitalizacion real del juego.
+--
+-- v3.6.10:
+--   * Scrollbar ajustada 2 px a la izquierda para centrarla visualmente entre el borde de la ventana y la lista.
+--
+-- v3.6.9:
+--   * Scrollbar desplazada 5 px adicionales a la derecha.
+--   * Fuente de botones ligeramente mas grande.
+--   * Grip de resize un poco mas grande y encajado en el vertice inferior derecho.
+--
+-- v3.6.8:
+--   * Igualado el margen izquierdo/derecho del fondo de filas en la lista registrada.
+--   * Scrollbar desplazada 10 px a la derecha.
+--   * Mantiene modo estricto 3.3.5a y el resto de comportamiento estable.
+--
+-- v3.6.6:
+--   * Se elimina el panel de fondo bajo los botones para que no haya bloque visual extra.
+--   * Los botones se acercan a los cuadros de edicion y quedan un poco mas arriba.
+--   * Mantiene modo estricto 3.3.5a y el resto de comportamiento estable.
+--
+-- v3.6.5:
+--   * Fix real de opacidad en modo estricto 3.3.5a.
+--   * Rutas de texturas de backdrop corregidas con \ para que Blizzard cargue marco y fondo.
+--   * Mantiene estilo RaidWarningHelper, titulo centrado y limite de 25 lineas.
+--
+-- v3.6.4:
+--   * Ajuste visual final al estilo RaidWarningHelper.
+--   * Fondo y paneles opacos para evitar cualquier transparencia in-game.
+--   * Mantiene titulo centrado y limite maximo de altura para 25 lineas.
+--
+-- v3.6.3:
+--   * Reestilado real al look de RaidWarningHelper: sin barra de titulo separada.
+--   * Titulo pequeño centrado en el marco superior, como en RWH.
+--   * Paneles recolocados para que el conjunto se vea claramente del mismo pack visual.
+--
+-- v3.6.2:
+--   * Tema visual alineado con RaidWarningHelper: mismo look dark blue-grey + oro.
+--   * Marco principal, barra de titulo, paneles, filas, cajas y popup rehechos con el mismo estilo.
+--
+-- v3.6.1:
+--   * Titulo centrado visualmente dentro del header.
+--   * Altura maxima ajustada para mostrar 25 lineas en la lista.
+--
+-- v3.6:
+--   * Tema visual inspirado en RaidTracker.
+--   * Fondo, bordes, panel de lista y filas con estilo oscuro moderno.
+--   * Solo registra mensajes de RAID (no RAID_LEADER).
+--
+-- v3.5:
+--   * Grip inferior derecho para ajustar la altura de la ventana.
+--   * Altura persistente entre sesiones.
+--   * Lista reconstruida con filas clicables.
+--   * Clicar una fila rellena Name y Spec para editar o borrar más rápido.
+--   * Mantiene: colores por clase solo en la ventana, chat/alerta en texto plano,
+--               anti-taint, confirmaciones propias, blur click-fuera, Start/Stop,
+--               orden A-Z, /msr reset y autocentrado.
+
 local ADDON_NAME = "MSLoggerRaid"
 local MSLR = CreateFrame("Frame", "MSLoggerRaidFrame", UIParent)
 tinsert(UISpecialFrames, "MSLoggerRaidFrame")
@@ -129,13 +197,62 @@ local function trim(s)
     return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
+local MS_KEYWORDS = {
+    ["pvp"] = "PvP",
+    ["pve"] = "PvE",
+    ["cat"] = "Cat",
+    ["rdudu"] = "Rdudu",
+    ["boomie"] = "Boomie",
+    ["rshaman"] = "RShaman",
+    ["enha"] = "Enha",
+    ["ele"] = "Ele",
+    ["ppala"] = "PPala",
+    ["rpala"] = "RPala",
+    ["hpala"] = "HPala",
+    ["fdk"] = "FDK",
+    ["bdk"] = "BDK",
+    ["udk"] = "UDK",
+    ["disco"] = "Disco",
+    ["sp"] = "SP",
+    ["fwar"] = "FWar",
+    ["tank"] = "Tank",
+    ["dps"] = "DPS",
+    ["heal"] = "Heal",
+}
+
+local function sanitizeMSKeyword(msg)
+    if not msg then return "" end
+    msg = trim(msg):lower()
+    msg = msg:gsub("^[%p%s]+", "")
+    msg = msg:gsub("[%p%s]+$", "")
+    return msg
+end
+
+local function canonicalizeMSValue(msg)
+    msg = trim(msg)
+    if msg == "" then return "" end
+    local key = sanitizeMSKeyword(msg)
+    return MS_KEYWORDS[key] or msg
+end
+
+local function isKeywordOnlyMessage(msg)
+    local key = sanitizeMSKeyword(msg)
+    return key ~= "" and MS_KEYWORDS[key] ~= nil
+end
+
 local function isMSMessage(msg)
-    return (msg and (msg:match("^%s*[Mm][Ss][%s:,-]") or msg:match("^%s*[Mm][Ss]$"))) ~= nil
+    if not msg then return false end
+    return msg:match("^%s*[Mm][Ss][%s:,-]") ~= nil
+        or msg:match("^%s*[Mm][Ss]$") ~= nil
+        or isKeywordOnlyMessage(msg)
 end
 
 local function normalizeMS(msg)
     if not msg then return "" end
-    return trim((msg:gsub("^%s*[Mm][Ss][%s:,-]*", "")))
+    if msg:match("^%s*[Mm][Ss][%s:,-]") or msg:match("^%s*[Mm][Ss]$") then
+        msg = trim((msg:gsub("^%s*[Mm][Ss][%s:,-]*", "")))
+    end
+    return canonicalizeMSValue(msg)
 end
 
 local function tableIsEmpty(t)
