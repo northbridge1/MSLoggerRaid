@@ -1,4 +1,12 @@
 -- MSLoggerRaid - 3.3.5 (WotLK 3.3.5a)
+-- v3.7.1:
+--   * Botones de skins renombrados a Dark UI y Crystal UI.
+--   * Crystal UI oculta el panel oscuro que rodea los cuadros Name y Spec.
+--
+-- v3.7.0:
+--   * Boton de opciones anclado a la ventana principal.
+--   * Selector de skins: UI actual opaca y nueva skin minimalista transparente.
+--
 -- v3.6.13:
 --   * Ahora tambien registra palabras clave exactas sin prefijo "ms" para reducir fallos humanos en raid.
 --   * Alias soportados: pvp, pve, cat, rdudu, boomie, rshaman, enha, ele, ppala, rpala,
@@ -78,6 +86,10 @@ local msData = {}             -- [playerName] = msText
 local classByName = {}        -- [playerName] = classToken (e.g. "WARRIOR")
 local lastRosterScan = 0
 local rowButtons = {}
+local SKIN_CURRENT = "current"
+local SKIN_MINIMAL = "minimal"
+local currentSkinId = SKIN_CURRENT
+local ApplySkin
 
 -- Constantes UI
 local PAD, GAP = 32, 12
@@ -104,6 +116,58 @@ local THEME_ACCENT = { 1.00, 0.82, 0.10, 1.00 }
 local THEME_TEXT_GOLD = { 0.94, 0.84, 0.55, 1.00 }
 local THEME_TEXT_MUTED = { 0.72, 0.74, 0.80, 1.00 }
 
+
+local SKINS = {
+    [SKIN_CURRENT] = {
+        label = "Dark UI",
+        mainBg = THEME_OUTER_BG,
+        mainBorder = THEME_OUTER_BORDER,
+        panelBg = THEME_PANEL_BG,
+        panelBorder = THEME_PANEL_BORDER,
+        headerBg = THEME_HEADER_BG,
+        headerBorder = THEME_HEADER_BORDER,
+        editBg = THEME_HEADER_BG,
+        editBorder = THEME_PANEL_BORDER,
+        rowBgA = THEME_ROW_BG_A,
+        rowBgB = THEME_ROW_BG_B,
+        rowBorder = THEME_ROW_BORDER,
+        accent = THEME_ACCENT,
+        textGold = THEME_TEXT_GOLD,
+        textMuted = THEME_TEXT_MUTED,
+        buttonBg = { 0.15, 0.16, 0.20, 1.00 },
+        buttonBorder = { 0.48, 0.48, 0.54, 1.00 },
+        buttonDisabledBg = { 0.10, 0.11, 0.14, 1.00 },
+        buttonDisabledBorder = { 0.30, 0.30, 0.36, 1.00 },
+        buttonHoverBorder = THEME_ACCENT,
+    },
+    [SKIN_MINIMAL] = {
+        label = "Crystal UI",
+        mainBg = { 0.02, 0.025, 0.035, 0.55 },
+        mainBorder = { 0.78, 0.80, 0.88, 0.72 },
+        panelBg = { 0.01, 0.012, 0.018, 0.32 },
+        panelBorder = { 0.72, 0.74, 0.82, 0.42 },
+        headerBg = { 0.01, 0.012, 0.018, 0.28 },
+        headerBorder = { 0.72, 0.74, 0.82, 0.38 },
+        editBg = { 0.00, 0.00, 0.00, 0.42 },
+        editBorder = { 0.78, 0.80, 0.88, 0.50 },
+        rowBgA = { 0.00, 0.00, 0.00, 0.20 },
+        rowBgB = { 1.00, 1.00, 1.00, 0.08 },
+        rowBorder = { 0.80, 0.82, 0.90, 0.16 },
+        accent = { 0.78, 0.88, 1.00, 1.00 },
+        textGold = { 0.86, 0.92, 1.00, 1.00 },
+        textMuted = { 0.78, 0.82, 0.88, 1.00 },
+        buttonBg = { 0.02, 0.025, 0.035, 0.46 },
+        buttonBorder = { 0.76, 0.78, 0.86, 0.46 },
+        buttonDisabledBg = { 0.02, 0.025, 0.035, 0.24 },
+        buttonDisabledBorder = { 0.50, 0.52, 0.58, 0.24 },
+        buttonHoverBorder = { 0.90, 0.94, 1.00, 0.85 },
+    },
+}
+
+local function GetSkin()
+    return SKINS[currentSkinId] or SKINS[SKIN_CURRENT]
+end
+
 local function ClampColor(v)
     if v < 0 then return 0 end
     if v > 1 then return 1 end
@@ -128,8 +192,9 @@ local function ApplyThemeBackdrop(frame, bg, border, edgeSize, inset)
         tile = true, tileSize = 16, edgeSize = edgeSize,
         insets = { left = inset, right = inset, top = inset, bottom = inset }
     })
-    bg = bg or THEME_PANEL_BG
-    border = border or THEME_PANEL_BORDER
+    local skin = GetSkin()
+    bg = bg or skin.panelBg or THEME_PANEL_BG
+    border = border or skin.panelBorder or THEME_PANEL_BORDER
     frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4])
     if frame.SetBackdropBorderColor then
         frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
@@ -139,16 +204,17 @@ end
 local function ApplyButtonVisual(btn, state)
     if not btn then return end
 
-    local bg = { 0.15, 0.16, 0.20, 1.00 }
-    local border = { 0.48, 0.48, 0.54, 1.00 }
+    local skin = GetSkin()
+    local bg = skin.buttonBg or { 0.15, 0.16, 0.20, 1.00 }
+    local border = skin.buttonBorder or { 0.48, 0.48, 0.54, 1.00 }
     if not btn:IsEnabled() then
-        bg = { 0.10, 0.11, 0.14, 1.00 }
-        border = { 0.30, 0.30, 0.36, 1.00 }
+        bg = skin.buttonDisabledBg or { 0.10, 0.11, 0.14, bg[4] or 1.00 }
+        border = skin.buttonDisabledBorder or { 0.30, 0.30, 0.36, border[4] or 1.00 }
     elseif state == "hover" then
-        bg = BrightenColor(bg, 0.03, 1.00)
-        border = THEME_ACCENT
+        bg = BrightenColor(bg, 0.03, bg[4] or 1.00)
+        border = skin.buttonHoverBorder or skin.accent or THEME_ACCENT
     elseif state == "pushed" then
-        bg = BrightenColor(bg, -0.02, 1.00)
+        bg = BrightenColor(bg, -0.02, bg[4] or 1.00)
     end
 
     btn:SetBackdropColor(bg[1], bg[2], bg[3], bg[4])
@@ -266,11 +332,12 @@ local function clamp(v, minV, maxV)
 end
 
 local function syncSaved()
-    MSLR_Saved = MSLR_Saved or { data = {}, windowHeight = WINDOW_HEIGHT }
+    MSLR_Saved = MSLR_Saved or { data = {}, windowHeight = WINDOW_HEIGHT, skin = SKIN_CURRENT }
     local d = {}
     for k, v in pairs(msData) do d[k] = v end
     MSLR_Saved.data = d
     MSLR_Saved.windowHeight = math.floor(MSLR:GetHeight() + 0.5)
+    MSLR_Saved.skin = currentSkinId
 end
 
 local function addOrUpdate(name, ms)
@@ -455,6 +522,13 @@ if title.SetScale then title:SetScale(0.70) end
 
 local close = CreateFrame("Button", nil, MSLR, "UIPanelCloseButton")
 close:SetPoint("TOPRIGHT", MSLR, "TOPRIGHT", -5, -5)
+
+local btnOptions = CreateFrame("Button", nil, MSLR, "UIPanelButtonTemplate")
+btnOptions:SetSize(38, 22)
+btnOptions:SetPoint("TOPLEFT", MSLR, "TOPLEFT", 8, -7)
+btnOptions:SetFrameLevel(MSLR:GetFrameLevel() + 30)
+btnOptions:SetText("Opt")
+SkinButton(btnOptions)
 
 local header = CreateFrame("Frame", nil, MSLR)
 header:SetPoint("TOPLEFT", MSLR, "TOPLEFT", PAD, -42)
@@ -663,14 +737,15 @@ end
 local function ApplyRowVisual(btn, index, hovered)
     if not btn then return end
 
-    local bg = (math.fmod(index or 1, 2) == 0) and THEME_ROW_BG_B or THEME_ROW_BG_A
-    local border = THEME_ROW_BORDER
-    local borderAlpha = THEME_ROW_BORDER[4] or 1
+    local skin = GetSkin()
+    local bg = (math.fmod(index or 1, 2) == 0) and skin.rowBgB or skin.rowBgA
+    local border = skin.rowBorder or THEME_ROW_BORDER
+    local borderAlpha = border[4] or 1
 
     if hovered then
         bg = BrightenColor(bg, 0.05, bg[4] or 1.00)
-        border = THEME_TEXT_GOLD
-        borderAlpha = 1.00
+        border = skin.textGold or THEME_TEXT_GOLD
+        borderAlpha = border[4] or 1.00
     end
 
     btn:SetBackdropColor(bg[1], bg[2], bg[3], bg[4])
@@ -686,7 +761,8 @@ local function EnsureRowButton(index)
     btn:SetHeight(ROW_H)
     btn:SetFrameLevel(content:GetFrameLevel() + 2)
     btn:EnableMouse(true)
-    ApplyThemeBackdrop(btn, (math.fmod(index, 2) == 0) and THEME_ROW_BG_B or THEME_ROW_BG_A, THEME_ROW_BORDER, 10, 2)
+    local skin = GetSkin()
+    ApplyThemeBackdrop(btn, (math.fmod(index, 2) == 0) and skin.rowBgB or skin.rowBgA, skin.rowBorder, 10, 2)
 
     local nameText = btn:CreateFontString(nil, "ARTWORK", "MSLR_ListFont")
     nameText:SetPoint("LEFT", btn, "LEFT", ROW_PAD_X + 4, 0)
@@ -698,7 +774,8 @@ local function EnsureRowButton(index)
     specText:SetPoint("LEFT", nameText, "RIGHT", 8, 0)
     specText:SetPoint("RIGHT", btn, "RIGHT", -(ROW_PAD_X + 4), 0)
     specText:SetJustifyH("LEFT")
-    specText:SetTextColor(THEME_TEXT_GOLD[1], THEME_TEXT_GOLD[2], THEME_TEXT_GOLD[3])
+    local specColor = GetSkin().textGold or THEME_TEXT_GOLD
+    specText:SetTextColor(specColor[1], specColor[2], specColor[3])
     btn.specText = specText
 
     btn:SetScript("OnClick", function(self)
@@ -742,6 +819,8 @@ local function RefreshRowVisual(index, name)
     ApplyRowVisual(btn, index, nil)
 
     btn.nameText:SetText(ColorizeName(name))
+    local specColor = GetSkin().textGold or THEME_TEXT_GOLD
+    btn.specText:SetTextColor(specColor[1], specColor[2], specColor[3])
     btn.specText:SetText(msData[name] or "")
 end
 
@@ -839,8 +918,118 @@ end)
 resizeGrip:SetScript("OnMouseUp", StopResize)
 MSLR:HookScript("OnHide", StopResize)
 
+-- Opciones / Skins
+local optionsPanel = CreateFrame("Frame", "MSLR_OptionsPanel", MSLR)
+optionsPanel:SetSize(188, 108)
+optionsPanel:SetPoint("TOPLEFT", MSLR, "TOPRIGHT", 6, -8)
+optionsPanel:SetFrameLevel(MSLR:GetFrameLevel() + 25)
+optionsPanel:EnableMouse(true)
+ApplyThemeBackdrop(optionsPanel, THEME_OUTER_BG, THEME_OUTER_BORDER, 16, 4)
+optionsPanel:Hide()
+tinsert(UISpecialFrames, "MSLR_OptionsPanel")
+
+local optionsTitle = optionsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+optionsTitle:SetPoint("TOP", optionsPanel, "TOP", 0, -10)
+optionsTitle:SetText("Skins")
+optionsTitle:SetJustifyH("CENTER")
+
+local btnSkinCurrent = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+btnSkinCurrent:SetSize(156, 24)
+btnSkinCurrent:SetPoint("TOP", optionsTitle, "BOTTOM", 0, -10)
+btnSkinCurrent:SetText("Dark UI")
+SkinButton(btnSkinCurrent)
+
+local btnSkinMinimal = CreateFrame("Button", nil, optionsPanel, "UIPanelButtonTemplate")
+btnSkinMinimal:SetSize(156, 24)
+btnSkinMinimal:SetPoint("TOP", btnSkinCurrent, "BOTTOM", 0, -8)
+btnSkinMinimal:SetText("Crystal UI")
+SkinButton(btnSkinMinimal)
+
+local function UpdateSkinButtons()
+    if btnSkinCurrent then
+        btnSkinCurrent:SetText(((currentSkinId == SKIN_CURRENT) and "* " or "") .. "Dark UI")
+        ApplyButtonVisual(btnSkinCurrent)
+    end
+    if btnSkinMinimal then
+        btnSkinMinimal:SetText(((currentSkinId == SKIN_MINIMAL) and "* " or "") .. "Crystal UI")
+        ApplyButtonVisual(btnSkinMinimal)
+    end
+end
+
+local function SetSkin(skinId)
+    if not SKINS[skinId] then skinId = SKIN_CURRENT end
+    currentSkinId = skinId
+    if ApplySkin then ApplySkin() end
+    syncSaved()
+end
+
+btnOptions:SetScript("OnClick", function()
+    if optionsPanel:IsShown() then
+        optionsPanel:Hide()
+    else
+        optionsPanel:Show()
+    end
+end)
+btnSkinCurrent:SetScript("OnClick", function() SetSkin(SKIN_CURRENT) end)
+btnSkinMinimal:SetScript("OnClick", function() SetSkin(SKIN_MINIMAL) end)
+MSLR:HookScript("OnHide", function()
+    if optionsPanel then optionsPanel:Hide() end
+end)
+
 -- Confirmación propia (sin StaticPopup)
 local confirmFrame, confirmText, confirmYes, confirmNo, confirmExtra, confirmCallback
+
+ApplySkin = function()
+    if not SKINS[currentSkinId] then currentSkinId = SKIN_CURRENT end
+    local skin = GetSkin()
+
+    MSLR:SetAlpha(1)
+    ApplyThemeBackdrop(MSLR, skin.mainBg, skin.mainBorder, 16, 4)
+    if currentSkinId == SKIN_MINIMAL then
+        -- Crystal UI: sin el panel oscuro alrededor de Name/Spec.
+        -- El frame se conserva para no tocar los anclajes, pero queda invisible.
+        ApplyThemeBackdrop(inputsPanel, { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, 12, 3)
+    else
+        ApplyThemeBackdrop(inputsPanel, skin.panelBg, skin.panelBorder, 12, 3)
+    end
+    ApplyThemeBackdrop(listPanel, skin.panelBg, skin.panelBorder, 12, 3)
+    ApplyThemeBackdrop(nameBox, skin.editBg or skin.headerBg, skin.editBorder or skin.headerBorder, 12, 3)
+    ApplyThemeBackdrop(specBox, skin.editBg or skin.headerBg, skin.editBorder or skin.headerBorder, 12, 3)
+    ApplyThemeBackdrop(optionsPanel, skin.mainBg, skin.mainBorder, 16, 4)
+    if confirmFrame then ApplyThemeBackdrop(confirmFrame, skin.mainBg, skin.mainBorder, 16, 4) end
+
+    title:SetTextColor(skin.accent[1], skin.accent[2], skin.accent[3])
+    labelName:SetTextColor(skin.textGold[1], skin.textGold[2], skin.textGold[3])
+    labelSpec:SetTextColor(skin.textGold[1], skin.textGold[2], skin.textGold[3])
+    optionsTitle:SetTextColor(skin.textGold[1], skin.textGold[2], skin.textGold[3])
+    if confirmText then confirmText:SetTextColor(skin.textGold[1], skin.textGold[2], skin.textGold[3]) end
+
+    ApplyButtonVisual(btnOptions)
+    ApplyButtonVisual(btnClear)
+    ApplyButtonVisual(btnChat)
+    ApplyButtonVisual(btnAdd)
+    ApplyButtonVisual(btnDel)
+    ApplyButtonVisual(btnStart)
+    ApplyButtonVisual(btnStop)
+    ApplyButtonVisual(btnAlert)
+    ApplyButtonVisual(btnSkinCurrent)
+    ApplyButtonVisual(btnSkinMinimal)
+    if confirmYes then ApplyButtonVisual(confirmYes) end
+    if confirmNo then ApplyButtonVisual(confirmNo) end
+    if confirmExtra then ApplyButtonVisual(confirmExtra) end
+
+    for i = 1, #rowButtons do
+        if rowButtons[i] then
+            ApplyRowVisual(rowButtons[i], rowButtons[i].rowIndex or i, nil)
+            if rowButtons[i].specText then
+                rowButtons[i].specText:SetTextColor(skin.textGold[1], skin.textGold[2], skin.textGold[3])
+            end
+        end
+    end
+
+    UpdateSkinButtons()
+    if MSLR.refreshList then MSLR.refreshList() end
+end
 
 local function LayoutConfirmFrame(showExtra)
     if not confirmFrame then return end
@@ -920,6 +1109,7 @@ local function EnsureConfirmFrame()
 
     LayoutConfirmFrame(false)
     tinsert(UISpecialFrames, "MSLR_ConfirmFrame")
+    if ApplySkin then ApplySkin() end
 end
 
 local function ShowConfirm(message, onAccept, showExtra)
@@ -1046,12 +1236,19 @@ MSLR:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addonName = ...
         if addonName == ADDON_NAME then
-            MSLR_Saved = MSLR_Saved or { data = {}, windowHeight = WINDOW_HEIGHT }
+            MSLR_Saved = MSLR_Saved or { data = {}, windowHeight = WINDOW_HEIGHT, skin = SKIN_CURRENT }
             MSLR_Saved.data = MSLR_Saved.data or {}
+            local savedSkin = MSLR_Saved.skin or SKIN_CURRENT
+            if SKINS[savedSkin] then
+                currentSkinId = savedSkin
+            else
+                currentSkinId = SKIN_CURRENT
+            end
             for k in pairs(msData) do msData[k] = nil end
             for k, v in pairs(MSLR_Saved.data) do msData[k] = v end
             local savedHeight = tonumber(MSLR_Saved.windowHeight) or WINDOW_HEIGHT
             MSLR:SetHeight(clamp(savedHeight, MIN_WINDOW_HEIGHT, MAX_WINDOW_HEIGHT))
+            if ApplySkin then ApplySkin() end
         end
 
     elseif event == "PLAYER_LOGIN" then
@@ -1124,6 +1321,11 @@ SlashCmdList["MSLR"] = function(msg)
     if msg == "reset" or msg == "center" or msg == "centrar" then
         CenterFrame()
         UIErrorsFrame:AddMessage("|cff00ff00MS Logger: ventana centrada.|r")
+        return
+    end
+    if msg == "options" or msg == "opciones" or msg == "skins" then
+        MSLR:Show()
+        if optionsPanel:IsShown() then optionsPanel:Hide() else optionsPanel:Show() end
         return
     end
     if MSLR:IsShown() then

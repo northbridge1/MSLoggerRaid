@@ -1,5 +1,5 @@
 ## Interface: 30300
 ## Title: MS Logger Raid
 ## Author: Northbridge
-## Version: 2.1
+## Version: 2.2
 MSLoggerRaid.lua
